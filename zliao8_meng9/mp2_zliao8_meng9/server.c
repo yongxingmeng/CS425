@@ -129,6 +129,9 @@ void *worker(void *ptr){
 	fd_set slave; 
 	FD_ZERO(&master);
 	FD_SET(*socket, &master);
+	//struct timeval timeout;
+	//timeout.tv_sec = 60;
+	//timeout.tv_usec = 0;
 
 	while(1){
 		slave = master;
@@ -293,84 +296,103 @@ void *worker(void *ptr){
 
 }
 
-void *server(void *ptr){
+int main(int argc, char **argv)
+{
+	struct addrinfo hints;
+	clients = malloc(sizeof(queue_t));
+	pids = malloc(sizeof(queue_t));
+	queue_init(clients);
+	queue_init(pids);
+	exit_flag = 0;
+	
+	if(argc != 2){
+		fprintf(stderr, "Usage: %s [port number]\n", argv[0]);
+		return 1;
+	}
 
-    int port = *((int*)ptr);
-    
-    struct addrinfo hints;
-    
-    /*
-     clients = malloc(sizeof(queue_t));
-     pids = malloc(sizeof(queue_t));
-     queue_init(clients);
-     queue_init(pids);
-     exit_flag = 0;
-     */
-    
+	int port = atoi(argv[1]);
+	if(port <= 0 || port >= 65536){
+		fprintf(stderr, "Illegal port number.\n");
+		return 1;
+	}
+
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_flags = AI_PASSIVE;
 	hints.ai_family = AF_INET;
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_protocol = 0;
-    
-	/* getaddrinfo(host name or IP address,
-     port number or the name of a particular service(http, ftp, telnet, or smtp),
-     already filled out struct addrinfo,
-     struct addrinfo gonna to be filled out) */
-	if(getaddrinfo(NULL, port, &hints, &res)){
+	
+	/*
+ 	 *  Create a socket to listen to incoming TCP connections 
+ 	 *
+	 */
+	// getaddrinfo(host name or IP address, 
+	// 	port number or the name of a particular service(http, ftp, telnet, or smtp), 
+	// 	already filled out struct addrinfo, 
+	// 	struct addrinfo gonna to be filled out)
+	if(getaddrinfo(NULL, argv[1], &hints, &res)){    
 		perror("getaddrinfo");
 		return 0;
 	}
-    
-	/* get the file descriptor:
-     socket(IPv4 or IPv6, stream or datagram, TCP or UDP) */
-	server_sock = socket(AF_INET, SOCK_STREAM, 0);
+
+	// get the file descriptor: 
+	// socket(IPv4 or IPv6, stream or datagram, TCP or UDP)
+	server_sock = socket(AF_INET, SOCK_STREAM, 0);   	
 	if(server_sock < 0){
 		perror("socket");
 		return 0;
 	}
-    
-	/* bind socket to the port number:
-     bind(socket file descriptor, pointer to the port and IP address, length of that address); */
+
+	// bind socket to the port number:
+	// bind(socket file descriptor, pointer to the port and IP address, length of that address);
 	if(bind(server_sock, res->ai_addr, res->ai_addrlen) == -1){
 		perror("bind");
 		return 0;
 	}
-    
-	/* wait for incoming connections
-     listen(socket file descriptor from socket(), number of connections allowed on the incoming queue) */
-	if(listen(server_sock, 20) == -1){
+
+	// wait for incoming connections
+	// listen(socket file descriptor from socket(), number of connections allowed on the incoming queue)
+	if(listen(server_sock, 10) == -1){
 		perror("listen");
 		return 0;
 	}
-    
+
+	/*
+ 	 *  Continuously accept incoming connections
+ 	 *  Lauching a new thread for each connection
+ 	 *
+ 	 */
 	signal(SIGINT, handler);
 	fd_set master;
-	fd_set slave;
+	fd_set slave; 
 	FD_ZERO(&master);
 	FD_SET(server_sock, &master);
-    
-    while(1){
+	//struct timeval timeout;
+	//timeout.tv_sec = 60;
+	//timeout.tv_usec = 0;
+
+	while(1){
 		slave = master;
 		if(select(server_sock+1, &slave, NULL, NULL, NULL) < 0){
 			perror("select");
 			break;
 		}
 		if (exit_flag == 1) break;
-        
+
 		int *client_socket = malloc(sizeof(int));
 		*client_socket = 0;
 		queue_enqueue(clients, client_socket);
-        
-		/* return a brand new socket file descriptor to use
-         accept(listening socket descriptor,
-         pointer to a local struct sockaddr_storage which stores the information about the incoming connection,
-         local integer variable that set to sizeof(struct sockaddr_storage))*/
+		// return a brand new socket file descriptor to use
+		// accept(listening socket descriptor, 
+		// 	pointer to a local struct sockaddr_storage which stores the information about the incoming connection, 
+		// 	local integer variable that set to sizeof(struct sockaddr_storage))
 		if( (*client_socket = accept(server_sock, NULL, NULL)) < 0){
 			perror("accept");
 			return 0;
 		}else{
-            pthread_t *p = malloc(sizeof(pthread_t));
+
+
+			pthread_t *p = malloc(sizeof(pthread_t));
 			queue_enqueue(pids, p);
 			int rc = pthread_create(p, NULL, worker, (void *)client_socket);
 			if (rc){
@@ -379,74 +401,6 @@ void *server(void *ptr){
 			}
 		}
 	}
-    
-
-}
-
-int main(int argc, char **argv)
-{
-    
-    /*
-     *  Incoming message handler
-     *
-     *  1. To start the program, run ./mp2 [port number]
-     *  2. The program will create a new thread to run a server and
-     *      listen to incoming HTTP requests
-     *  3. The server will create a worker thread to handle each
-     *      incoming requests, run the commands and send back data
-     *
-     */
-    
-    if(argc != 2){
-		fprintf(stderr, "Usage: %s [port number]\n", argv[0]);
-		return 1;
-	}
-    
-	int port = atoi(argv[1]);
-	if(port <= 0 || port >= 65536){
-		fprintf(stderr, "Illegal port number.\n");
-		return 1;
-	}
-    
-    pthread_t *p = malloc(sizeof(pthread_t));
-    int rc = pthread_create(p, NULL, server, (void *)&port);
-    if (rc){
-        fprintf(stderr, "---ERROR; pthread_create failed, return code is %d\n", rc);
-        exit(-1);
-    }
-    
-
-
-    
-    
-    /*
-     *  Terminal monitor
-     *
-     *  1. Monitoring new commands on the terminal
-     *  2. Giving corresponding responses or starting to run the Querier
-     *
-     */
-    
-    
-    /*
-     *  Querier
-     *
-     *  1. It will handle the new commands and send requests to other
-     *      distributed machines
-     *  2. It waits for data from other machines
-     *
-     */
-    
-    /*
-     *  Output processor
-     *
-     *  1. After successfully getting messages from other distributed 
-     *      machines, it processes data and prints it out
-     *
-     */
-
-
-
 
 	return 0;
 }

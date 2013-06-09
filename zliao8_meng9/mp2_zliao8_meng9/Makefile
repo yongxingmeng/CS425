@@ -9,9 +9,9 @@ INC = -I. -Ilibs
 FLAGS = -g -W -Wall
 LIBS = -lpthread
 
-all: server
+all: dlq
 
-server: libdictionary.o libhttp.o queue.o server.c
+dlq: libdictionary.o libhttp.o queue.o dlq.c
 	$(CC) $(FLAGS) $(INC) $^ -o $@ $(LIBS)
 
 libdictionary.o: libs/libdictionary.c libs/libdictionary.h
@@ -24,4 +24,4 @@ queue.o: queue.c queue.h
 	$(CC) -c $(FLAGS) $(INC) $< -o $@ $(LIBS)
 
 clean:
-	$(RM) -r *.o server
+	$(RM) -r *.o dlq
